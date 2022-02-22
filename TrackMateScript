@@ -1,0 +1,145 @@
+import sys
+
+from ij import WindowManager, IJ
+from ij.gui import OvalRoi, WaitForUserDialog, GenericDialog
+from ij.measure import ResultsTable
+from ij.io import OpenDialog
+
+from fiji.plugin.trackmate import TrackMate
+from fiji.plugin.trackmate import Model
+from fiji.plugin.trackmate import Settings
+from fiji.plugin.trackmate import Logger
+from fiji.plugin.trackmate.detection import LogDetectorFactory
+from fiji.plugin.trackmate.tracking import ManualTrackerFactory
+
+# Author: Rachel Cass
+# Under supervision of Jennifer Payne
+# Valid for TrackMate version 7.5.1
+
+
+def setUp():
+    # Instantiate model object
+    model = Model()
+
+    # Set logger - sends messages to ImageJ log window
+    model.setLogger(Logger.IJ_LOGGER)
+
+    # Prepare settings object
+    settings = Settings(imp)
+
+    # Configure detector
+    # Applies an LoG filter
+    settings.detectorFactory = LogDetectorFactory()
+    # Change the following settings depending on image set
+    # E.g. For Egg 2019_08_28_StaphLive 1: Radius=4, Threshold=2, TargetChannel=1
+    # Note: ensure . after Threshold number so type is double, not integer
+    settings.detectorSettings = {
+        'DO_SUBPIXEL_LOCALIZATION': True,
+        'RADIUS': 2.5,
+        'TARGET_CHANNEL': 1,
+        'THRESHOLD': 5.,
+        'DO_MEDIAN_FILTERING': False,
+    }
+
+    # Configure tracker
+    # Note: sparse LAP tracker better for when tracking edges
+    # simple LAP or Manual tracker better for when not
+    #   - Manual should be faster as it skips steps which don't have parameters set for them
+    #   - Simple LAP has default settings which it runs
+
+    # FOR SIMPLE LAP TRACKER:
+    # from fiji.plugin.trackmate.tracking.sparselap import SimpleSparseLAPTrackerFactory
+    # from fiji.plugin.trackmate.tracking import LAPUtils
+    # settings.trackerFactory = SimpleSparseLAPTrackerFactory()
+    # settings.trackerSettings = LAPUtils.getDefaultLAPSettingsMap()
+
+    # FOR SPARSE LAP TRACKER:
+    # from fiji.plugin.trackmate.tracking.sparselap import SparseLAPTrackerFactory
+    # from fiji.plugin.trackmate.tracking import LAPUtils
+    # settings.trackerFactory = SparseLAPTrackerFactory()
+    # settings.trackerSettings = LAPUtils.getDefaultLAPSettingsMap()
+
+    # FOR MANUAL TRACKER:
+    # from fiji.plugin.trackmate.tracking import ManualTrackerFactory
+    # settings.trackerFactory = ManualTrackerFactory()
+    settings.trackerFactory = ManualTrackerFactory()
+
+    print(str(settings))
+
+    # Instantiate trackmate
+    trackmate = TrackMate(model, settings)
+
+    # Error checking
+    ok = trackmate.checkInput()
+    if not ok:
+        sys.exit(str(trackmate.getErrorMessage()))
+
+    ok = trackmate.process()
+    if not ok:
+        sys.exit(str(trackmate.getErrorMessage()))
+
+    # Display results
+    spots = model.getSpots()
+
+    return model, settings, trackmate, spots
+
+# Set encoding to avoid errors with UTF8 chars generated in TrackMate
+reload(sys)
+sys.setdefaultencoding('utf-8')
+
+# Get currently selected image
+imp = WindowManager.getCurrentImage()
+
+# Input how many ovals of interest will need to be input for this image
+# 1 is the default value, returned if the user inputs and invalid number
+gd = GenericDialog("ROI required: ")
+gd.addNumericField("Number of oval ROI required", 1, 0)
+gd.showDialog()
+roiNumber = int(gd.getNextNumber())
+
+model, settings, trackmate, spots = setUp()
+
+# Get the number of spots in whole 1st frame
+totalSpots = spots.getNSpots(0, True)
+
+# Select ovals of interest
+for j in range(0, roiNumber):
+    yolk = OvalRoi(292, 454, 350, 350)
+    imp.setRoi(yolk)
+    WaitForUserDialog("Place oval " + str(j + 1) + ":").show()
+
+    model, settings, trackmate, spots = setUp()
+
+    # Create results table
+    spotsVsTimeData = ResultsTable()
+    # Add headings and total spot data to results table
+    spotsVsTimeData.addRow()
+    spotsVsTimeData.addValue('Time (seconds)', 'Total')
+    spotsVsTimeData.addValue('Spots', str(totalSpots))
+
+    # Get the PlotNSpotsVsTime dataset
+    # Code interpreted from the PlotNSpotsVsTimeAction() method
+    nFrames = spots.keySet().size()
+    for i in range(nFrames):
+        spotData = spots.getNSpots(i, True)
+        if spotData > 0.0:
+            timeData = int(spots.iterator(i, False).next().getFeature("POSITION_T"))
+        else:
+            timeData = int(i * settings.dt)
+        # Add data to the results table
+        spotsVsTimeData.addRow()
+        spotsVsTimeData.addValue('Time (seconds)', str(timeData))
+        spotsVsTimeData.addValue('Spots', str(spotData))
+
+    # Show and save the results table
+    spotsVsTimeData.getResultsTable()
+    spotsVsTimeData.show('Results - oval ' + str(j + 1))
+
+# Close and reopen file when user is done
+WaitForUserDialog("Click ok when done to reopen file.").show()
+imp.close()
+# Open file again so next series can be selected
+path = OpenDialog.getLastDirectory()
+filename = OpenDialog.getLastName()
+file = path + filename
+imp = IJ.openImage(file)
