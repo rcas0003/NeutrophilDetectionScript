@@ -1,14 +1,9 @@
 import sys
-
 from ij import WindowManager, IJ
 from ij.gui import OvalRoi, WaitForUserDialog, GenericDialog
 from ij.measure import ResultsTable
 from ij.io import OpenDialog
-
-from fiji.plugin.trackmate import TrackMate
-from fiji.plugin.trackmate import Model
-from fiji.plugin.trackmate import Settings
-from fiji.plugin.trackmate import Logger
+from fiji.plugin.trackmate import TrackMate, Model, Settings, Logger
 from fiji.plugin.trackmate.detection import LogDetectorFactory
 from fiji.plugin.trackmate.tracking import ManualTrackerFactory
 
@@ -16,14 +11,7 @@ from fiji.plugin.trackmate.tracking import ManualTrackerFactory
 # Under supervision of Jennifer Payne
 # Valid for TrackMate version 7.5.1
 
-
 def setUp():
-    # Instantiate model object
-    model = Model()
-
-    # Set logger - sends messages to ImageJ log window
-    model.setLogger(Logger.IJ_LOGGER)
-
     # Prepare settings object
     settings = Settings(imp)
 
@@ -32,44 +20,21 @@ def setUp():
     settings.detectorFactory = LogDetectorFactory()
     # Change the following settings depending on image set
     # E.g. For Egg 2019_08_28_StaphLive 1: Radius=4, Threshold=2, TargetChannel=1
-    # Note: ensure . after Threshold number so type is double, not integer
+    # Note: ensure .0 or .5 is after Radius and Threshold number so type is double, not integer
     settings.detectorSettings = {
         'DO_SUBPIXEL_LOCALIZATION': True,
-        'RADIUS': 2.5,
+        'RADIUS': 4.0,
         'TARGET_CHANNEL': 1,
-        'THRESHOLD': 5.,
+        'THRESHOLD': 2.0,
         'DO_MEDIAN_FILTERING': False,
     }
 
     # Configure tracker
-    # Note: sparse LAP tracker better for when tracking edges
-    # simple LAP or Manual tracker better for when not
-    #   - Manual should be faster as it skips steps which don't have parameters set for them
-    #   - Simple LAP has default settings which it runs
-
-    # FOR SIMPLE LAP TRACKER:
-    # from fiji.plugin.trackmate.tracking.sparselap import SimpleSparseLAPTrackerFactory
-    # from fiji.plugin.trackmate.tracking import LAPUtils
-    # settings.trackerFactory = SimpleSparseLAPTrackerFactory()
-    # settings.trackerSettings = LAPUtils.getDefaultLAPSettingsMap()
-
-    # FOR SPARSE LAP TRACKER:
-    # from fiji.plugin.trackmate.tracking.sparselap import SparseLAPTrackerFactory
-    # from fiji.plugin.trackmate.tracking import LAPUtils
-    # settings.trackerFactory = SparseLAPTrackerFactory()
-    # settings.trackerSettings = LAPUtils.getDefaultLAPSettingsMap()
-
-    # FOR MANUAL TRACKER:
-    # from fiji.plugin.trackmate.tracking import ManualTrackerFactory
-    # settings.trackerFactory = ManualTrackerFactory()
     settings.trackerFactory = ManualTrackerFactory()
-
     print(str(settings))
 
     # Instantiate trackmate
     trackmate = TrackMate(model, settings)
-
-    # Error checking
     ok = trackmate.checkInput()
     if not ok:
         sys.exit(str(trackmate.getErrorMessage()))
@@ -81,7 +46,7 @@ def setUp():
     # Display results
     spots = model.getSpots()
 
-    return model, settings, trackmate, spots
+    return settings, trackmate, spots
 
 # Set encoding to avoid errors with UTF8 chars generated in TrackMate
 reload(sys)
@@ -89,6 +54,10 @@ sys.setdefaultencoding('utf-8')
 
 # Get currently selected image
 imp = WindowManager.getCurrentImage()
+# Instantiate model object
+model = Model()
+# Set logger - sends messages to ImageJ log window
+model.setLogger(Logger.IJ_LOGGER)
 
 # Input how many ovals of interest will need to be input for this image
 # 1 is the default value, returned if the user inputs and invalid number
@@ -97,7 +66,7 @@ gd.addNumericField("Number of oval ROI required", 1, 0)
 gd.showDialog()
 roiNumber = int(gd.getNextNumber())
 
-model, settings, trackmate, spots = setUp()
+settings, trackmate, spots = setUp()
 
 # Get the number of spots in whole 1st frame
 totalSpots = spots.getNSpots(0, True)
@@ -108,7 +77,7 @@ for j in range(0, roiNumber):
     imp.setRoi(yolk)
     WaitForUserDialog("Place oval " + str(j + 1) + ":").show()
 
-    model, settings, trackmate, spots = setUp()
+    settings, trackmate, spots = setUp()
 
     # Create results table
     spotsVsTimeData = ResultsTable()
